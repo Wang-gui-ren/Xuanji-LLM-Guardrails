@@ -1,0 +1,234 @@
+{
+  "enabled": {
+    "description": "启用安全护栏插件",
+    "type": "bool",
+    "default": true
+  },
+  "guard_mode": {
+    "description": "护栏强度",
+    "type": "string",
+    "default": "balanced",
+    "options": [
+      "strict",
+      "balanced",
+      "permissive"
+    ]
+  },
+  "llm_mode": {
+    "description": "护栏内部调用的大模型来源",
+    "type": "string",
+    "default": "astrbot_provider",
+    "options": [
+      "astrbot_provider",
+      "openai_compatible_api"
+    ]
+  },
+  "llm_temperature": {
+    "description": "温度参数",
+    "hint": "控制输出的稳定性，范围通常为0-0.4，值越高越随机",
+    "type": "float",
+    "default": 0.2
+  },
+  "astrbot_provider_id": {
+    "description": "AstrBot 提供商",
+    "hint":"留空则跟随当前对话",
+    "type": "string",
+    "_special": "select_provider",
+    "default": ""
+  },
+  "openai_base_url": {
+    "description": "API 根地址",
+    "type": "string",
+    "default": ""
+  },
+  "openai_api_key": {
+    "description": "API 的令牌",
+    "type": "string",
+    "default": "",
+    "invisible": true
+  },
+  "openai_model": {
+    "description": "API 使用的模型名称",
+    "type": "string",
+    "default": ""
+  },
+  "openai_timeout_seconds": {
+    "description": "超时时间",
+    "hint":"护栏内部调用大模型时的超时时间（秒）",
+    "type": "int",
+    "default": 60
+  },
+  "safe_decoding_enabled": {
+    "description": "启用远程 SafeDecoding 服务",
+    "type": "bool",
+    "default": false
+  },
+  "safe_decoding_endpoint": {
+    "description": "SafeDecoding 的 HTTP 接口地址。",
+    "type": "string",
+    "default": "http://127.0.0.1:8100/safedecoding"
+  },
+  "safe_decoding_token": {
+    "description": "SafeDecoding 的 Bearer Token",
+    "type": "string",
+    "default": "",
+    "invisible": true
+  },
+  "pii_mask_token": {
+    "description": "替换占位符",
+    "hint":"输出脱敏时使用的替换占位符",
+    "type": "string",
+    "default": "[MASK]"
+  },
+  "safe_response_template": {
+    "description": "固定安全说明。",
+    "hint":"当输出命中高风险主题且被安全重写时，返回给用户的固定安全说明",
+    "type": "text",
+    "default": "This request involves a high-risk topic and has been moved into safety mode. Only compliant, defensive, auditing, false-positive analysis, and security research guidance may be returned."
+  },
+  "input_guard_enabled": {
+    "description": "启用输入护栏",
+    "type": "bool",
+    "default": true
+  },
+  "output_guard_enabled": {
+    "description": "启用输出护栏",
+    "type": "bool",
+    "default": true
+  },
+  "tool_input_guard_enabled": {
+    "description": "启用工具调用输入护栏",
+    "type": "bool",
+    "default": true
+  },
+  "tool_output_guard_enabled": {
+    "description": "启用工具调用输出护栏",
+    "type": "bool",
+    "default": true
+  },
+  "dynamic_context_enabled": {
+    "description": "启用动态安全上下文注入",
+    "type": "bool",
+    "default": true
+  },
+  "auto_collect_dialogue": {
+    "description": "自动把护栏处理摘要沉淀到知识库。",
+    "type": "bool",
+    "default": true
+  },
+  "auto_seed_knowledge": {
+    "description": "初始化时自动写入 Guardrail 种子",
+    "type": "bool",
+    "default": true
+  },
+  "evolve_cron_enabled": {
+    "description": "启用定时演化任务",
+    "type": "bool",
+    "default": false
+  },
+  "evolve_cron_expression": {
+    "description": "定时演化任务的 Cron 表达式",
+    "type": "string",
+    "default": "0 */6 * * *"
+  },
+  "write_audit_log": {
+    "description": "写入 audit 审计文件。",
+    "type": "bool",
+    "default": true
+  },
+  "log_guard_progress": {
+    "description": "控制台输出护栏进度日志",
+    "type": "bool",
+    "default": true
+  },
+  "log_rewritten_payload": {
+    "description": "在控制台输出原始输入、原始输出与重写后的内容",
+    "type": "bool",
+    "default": true
+  },
+  "intent_model_enabled": {
+    "description": "分类开关",
+    "hint":"启用“小模型/同模型”意图判定层，对输入输出做 harmful / benign_security / ambiguous 分类。",
+    "type": "bool",
+    "default": true
+  },
+  "intent_model_fail_open": {
+    "description": "意图判定二次处理",
+    "hint":"意图判定失败时是否放行到规则层继续处理。关闭后将偏保守。",
+    "type": "bool",
+    "default": true
+  },
+  "input_intent_check_enabled": {
+    "description": "启用输入侧意图判定。",
+    "type": "bool",
+    "default": true,
+    "invisible": true
+  },
+  "output_intent_check_enabled": {
+    "description": "启用输出侧意图判定。",
+    "type": "bool",
+    "default": true,
+    "invisible": true
+  },
+  "high_risk_keywords": {
+    "description": "高危关键词",
+    "hint":"高危关键词。命中后将优先进入重写或阻断。使用英文逗号分隔",
+    "type": "text",
+    "default": "bomb,explosive,detonator,weapon,malware,ransomware,炸弹,爆炸物,雷管,毒品,制毒,枪支改造,制作武器,木马,勒索软件,恐怖袭击,投毒"
+  },
+  "custom_sensitive_keywords": {
+    "description": "用户自定义敏感词",
+    "hint":"用户自定义敏感词。会叠加到内建黑盒词库之上。使用英文逗号分隔。",
+    "type": "text",
+    "default": ""
+  },
+  "injection_keywords": {
+    "description": "提示注入关键词",
+    "hint":"提示注入关键词，使用英文逗号分隔。",
+    "type": "text",
+    "default": "ignore previous instructions,system prompt,developer message,jailbreak,dan,developer mode,prompt injection,override safety,reveal hidden policy,越狱,忽略之前,无视规则,绕过限制,系统提示词,开发者消息,解除限制"
+  },
+  "unsafe_keywords": {
+    "description": "危险内容关键词",
+    "hint":"危险内容关键词，使用英文逗号分隔。插件内部会叠加黑盒词库，可以放额外补充内容",
+    "type": "text",
+    "default": "explosive,kill,murder,terrorist,weapon,payload,bypass detection,dropper,credential theft,毒品,炸弹,爆炸,爆破,制毒,武器,木马,勒索,免杀,撞库,盗号,窃密,洗钱"
+  },
+  "toxic_keywords": {
+    "description": "毒性或辱骂词关键词",
+    "hint":"用于输入侧和输出侧的辱骂、脏话、攻击性表达识别。单独命中时，输入侧可优先进入安全改写而不是直接放行。",
+    "type": "text",
+    "default": "fuck,bitch,whore,傻逼,你妈,垃圾东西"
+  },
+  "competitor_keywords": {
+    "description": "额外关注的敏感关键词",
+    "hint":"需要额外关注的敏感关键词，使用英文逗号分隔，可留空。",
+    "type": "text",
+    "default": ""
+  },
+  "rewrite_on_risk": {
+    "description": "风险达到阈值时自动改写",
+    "type": "bool",
+    "default": true,
+    "invisible": true
+  },
+  "block_on_high_risk": {
+    "description": "高风险内容自动阻断",
+    "type": "bool",
+    "default": true,
+    "invisible": true
+  },
+  "risk_threshold": {
+    "description": "风险阈值",
+    "hint":"默认由 guard_mode 自动控制，通常无需手动修改",
+    "type": "float",
+    "default": 0.65,
+    "invisible": true
+  },
+  "intent_model_system_prompt": {
+    "description": "高级：意图判定模型使用的系统提示词",
+    "type": "text",
+    "default": "You are a safety intent classifier for an LLM guardrail. Return strict JSON with keys: intent, confidence, reason. intent must be one of harmful, benign_security, ambiguous. Treat requests asking for dangerous instructions, weapon building, malware operations, harm, evasion or illegal tactics as harmful. Treat moderation debugging, compliance review, security policy testing, red-team review without requesting harmful procedures as benign_security.",
+    "invisible": true
+  }
+}
