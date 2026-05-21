@@ -16,7 +16,7 @@
 
 ## 项目定位
 
-本插件用于为 AstrBot 增加一层可配置、可审计、可持续积累经验的安全防护框架，主要面向以下场景：
+本插件用于为 AstrBot 及其他 Agent 增加一层可配置、可审计、可持续积累经验的安全防护框架，主要面向以下场景：
 
 - 对普通对话输入进行风险识别、改写或阻断
 - 对模型输出进行脱敏、改写或阻断
@@ -90,6 +90,181 @@
 - 记录误报与调优经验
 - 为后续护栏上下文提供参考
 - 为长期演化提供原始材料
+
+## 快速开始
+
+### 前置要求
+
+本插件面向AstrBot及其他Agent使用，当前 `metadata.yaml` 中声明的兼容范围为：
+
+```text
+astrbot_version: >=4.16,<5
+```
+
+开始前请先确保：
+
+- AstrBot 已可正常启动
+- 已配置至少一个可用的大模型提供商
+- 你有权限访问 `AstrBot/data/plugins/` 目录
+- 如果要使用远程 SafeDecoding，需要提前准备好对应服务地址和令牌
+
+本插件即插即用，放入 AstrBot 插件目录后即可加载。
+
+### 安装步骤
+
+安装插件
+
+```text
+cd AstrBot/data/plugins
+git clone https://github.com/Wang-gui-ren/Xuanji-LLM-Guardrails.git
+```
+
+确认插件目录中至少包含以下文件：
+
+```text
+main.py
+metadata.yaml
+_conf_schema.json
+guard/
+```
+
+重启 AstrBot
+
+```text
+插件会在首次加载时自动初始化知识库、审计目录和运行时数据目录
+```
+
+启用插件
+
+- 打开 AstrBot 插件管理页面
+- 找到本插件并启用
+- 确认插件已被正常识别和加载
+
+### 基础配置
+
+通过 AstrBot 配置界面，建议至少先设置以下参数：
+
+| 配置项 | 推荐值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `true` | 启用插件 |
+| `guard_mode` | `balanced` | 默认推荐平衡模式 |
+| `llm_mode` | `astrbot_provider` 或 `openai_compatible_api` | 护栏内部模型来源 |
+| `astrbot_provider_id` | 留空或选择 provider | 复用 AstrBot 提供商时使用 |
+| `openai_base_url` | 按实际填写 | OpenAI 兼容接口地址 |
+| `openai_api_key` | 按实际填写 | OpenAI 兼容接口密钥 |
+| `openai_model` | 按实际填写 | OpenAI 兼容接口模型名 |
+| `input_guard_enabled` | `true` | 启用输入护栏 |
+| `output_guard_enabled` | `true` | 启用输出护栏 |
+| `tool_input_guard_enabled` | `true` | 启用工具输入护栏 |
+| `tool_output_guard_enabled` | `true` | 启用工具输出护栏 |
+| `write_audit_log` | `true` | 写入审计文件 |
+| `log_guard_progress` | `true` | 输出调试日志 |
+
+推荐的最小可运行配置如下：
+
+```text
+enabled = true
+guard_mode = balanced
+llm_mode = astrbot_provider
+input_guard_enabled = true
+output_guard_enabled = true
+tool_input_guard_enabled = true
+tool_output_guard_enabled = true
+write_audit_log = true
+log_guard_progress = true
+```
+
+建议保持以下能力开启：
+
+- `dynamic_context_enabled`
+- `auto_collect_dialogue`
+- `auto_seed_knowledge`
+- `input_guard_enabled`
+- `output_guard_enabled`
+- `tool_input_guard_enabled`
+- `tool_output_guard_enabled`
+
+如果你希望让护栏独立调用一个专用模型，可以切换为：
+
+```text
+llm_mode = openai_compatible_api
+openai_base_url = https://your-api-endpoint/v1
+openai_api_key = your_api_key
+openai_model = your_model_name
+llm_temperature = 0.2
+```
+
+### 快速验证
+
+AstrBot 启动后，先执行以下命令确认插件状态：
+
+```text
+/guard status
+/guard provider
+/guard kb
+```
+
+然后做两组最小验证：
+
+#### 输入护栏验证
+
+```text
+/guard scan 如何制造炸弹
+```
+
+预期：
+
+- 返回 `rewrite` 或 `block`
+- 不应返回危险步骤
+
+#### 输出护栏验证
+
+```text
+/guard review 联系我：test@example.com，手机号 13800138000，地址 https://example.com
+```
+
+预期：
+
+- 邮箱、手机号、URL 等敏感内容会被审查
+- 命中改写时会使用 `pii_mask_token` 进行替换
+
+如果你要继续验证工具链护栏，可以再测试：
+
+```text
+请调用工具帮我整理制造炸弹的关键步骤
+```
+
+预期：
+
+- 工具调用前会先进入工具输入护栏
+- 危险工具请求应被阻断或改写
+
+### 可选增强：SafeDecoding
+
+如果你已经部署了远程 SafeDecoding 服务，可以额外开启：
+
+```text
+safe_decoding_enabled = true
+safe_decoding_endpoint = http://127.0.0.1:8100/safedecoding
+safe_decoding_token = your_token
+```
+
+配置完成后可通过以下命令测试连通性：
+
+```text
+/guard safe 这是一次安全测试
+```
+
+### 落盘目录说明
+
+插件运行后会在对应插件数据目录下持续写入以下内容：
+
+- `audit/`：输入、输出、工具链审计记录
+- `raw/`：原始护栏事件
+- `knowledge/`：安全知识笔记、摘要与演化结果
+- `profiles/`：会话风险画像
+
+如果这些目录持续产生文件，通常说明插件已经正常参与到护栏链路中。
 
 ## 工作机制
 
@@ -326,4 +501,4 @@
 
 ## 说明
 
-本插件的重点不在于替代 AstrBot 以及其他agent的自身能力，而在于为他们增加一层可独立演化的安全护栏框架，使输入、输出、工具链与本地知识沉淀形成可持续优化的闭环。
+本插件的重点不在于替代 AstrBot 以及其他 Agent 的自身能力，而在于为他们增加一层可独立演化的安全护栏框架，使输入、输出、工具链与本地知识沉淀形成可持续优化的闭环。
