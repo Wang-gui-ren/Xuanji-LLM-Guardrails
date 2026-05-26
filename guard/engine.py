@@ -33,6 +33,16 @@ class GuardEngine:
     EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
     PHONE_RE = re.compile(r"(?:(?:\+?\d{1,3})?[-.\s()]*)?(?:\d[-.\s()]*){7,14}\d")
     URL_RE = re.compile(r"https?://\S+", re.I)
+    MASKED_PHONE_RE = re.compile(r"\b\d{2,4}\*{2,8}\d{2,4}\b")
+    ADDRESS_PLACEHOLDER_RE = re.compile(r"[_＿-]{3,}")
+    CONTACT_VALUE_TERMINATOR = r"(?=(?:[，,；;\n\r]|$))"
+    LABEL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("email", ("email", "e-mail", "mail", "邮箱", "邮件")),
+        ("phone", ("phone", "mobile", "tel", "telephone", "手机号", "手机", "电话", "联系电话")),
+        ("contact", ("contact", "contact me", "联系方式", "联系我")),
+        ("address", ("address", "addr", "地址", "住址")),
+        ("url", ("url", "link", "website", "链接", "网址", "站点")),
+    )
 
     def __init__(self, settings: GuardSettings) -> None:
         self.settings = settings
@@ -337,6 +347,14 @@ class GuardEngine:
             hits.append("phone")
         if self.URL_RE.search(text):
             hits.append("url")
+        if self._has_labeled_contact_value(text):
+            hits.append("contact")
+        if self._has_labeled_address_value(text):
+            hits.append("address")
+        if self.MASKED_PHONE_RE.search(text):
+            hits.append("phone_masked")
+        if self.ADDRESS_PLACEHOLDER_RE.search(text):
+            hits.append("address_placeholder")
         return hits
 
     async def _classify_intent_if_needed(
@@ -419,9 +437,12 @@ class GuardEngine:
         hits: list[str],
         high_risk_hits: list[str],
     ) -> str:
-        rewritten = self.EMAIL_RE.sub(self.settings.pii_mask_token, text)
+        rewritten = self._redact_labeled_contact_fields(text)
+        rewritten = self.EMAIL_RE.sub(self.settings.pii_mask_token, rewritten)
         rewritten = self.PHONE_RE.sub(self.settings.pii_mask_token, rewritten)
         rewritten = self.URL_RE.sub(self.settings.pii_mask_token, rewritten)
+        rewritten = self.MASKED_PHONE_RE.sub(self.settings.pii_mask_token, rewritten)
+        rewritten = self._redact_placeholder_fields(rewritten)
         for keyword in self.settings.toxic_keywords + self.settings.unsafe_keywords + self.settings.high_risk_keywords:
             if keyword:
                 rewritten = re.sub(
@@ -432,7 +453,137 @@ class GuardEngine:
                 )
         if high_risk_hits:
             return self.settings.safe_response_template
+        residual_hits = self._detect_pii(rewritten)
+        if residual_hits:
+            return self._fallback_pii_redaction(residual_hits)
         return rewritten
+
+    def _redact_labeled_contact_fields(self, text: str) -> str:
+        rewritten = text
+        for group_name, labels in self.LABEL_GROUPS:
+            label_pattern = "|".join(re.escape(label) for label in labels)
+            pattern = re.compile(
+                rf"(?P<prefix>(?P<label>{label_pattern})\s*[:：]\s*)(?P<value>.*?){self.CONTACT_VALUE_TERMINATOR}",
+                re.I,
+            )
+
+            def replace(match: re.Match[str]) -> str:
+                value = match.group("value").strip()
+                if not value:
+                    return match.group(0)
+                if group_name == "address" and not self._looks_like_sensitive_address_value(value):
+                    return match.group(0)
+                return f"{match.group('prefix')}{self.settings.pii_mask_token}"
+
+            rewritten = pattern.sub(replace, rewritten)
+        return rewritten
+
+    def _redact_placeholder_fields(self, text: str) -> str:
+        rewritten = text
+        placeholder_labels = ("地址", "住址", "address", "addr", "链接", "网址", "url", "link", "website")
+        label_pattern = "|".join(re.escape(label) for label in placeholder_labels)
+        pattern = re.compile(
+            rf"(?P<prefix>(?P<label>{label_pattern})\s*[:：]\s*)(?P<value>.*?){self.CONTACT_VALUE_TERMINATOR}",
+            re.I,
+        )
+
+        def replace(match: re.Match[str]) -> str:
+            value = match.group("value").strip()
+            if not value:
+                return match.group(0)
+            if self.ADDRESS_PLACEHOLDER_RE.search(value):
+                return f"{match.group('prefix')}{self.settings.pii_mask_token}"
+            return match.group(0)
+
+        return pattern.sub(replace, rewritten)
+
+    def _has_labeled_contact_value(self, text: str) -> bool:
+        return any(
+            self._has_labeled_value(text, labels)
+            for group_name, labels in self.LABEL_GROUPS
+            if group_name in {"email", "phone", "contact", "url"}
+        )
+
+    def _has_labeled_address_value(self, text: str) -> bool:
+        for group_name, labels in self.LABEL_GROUPS:
+            if group_name != "address":
+                continue
+            if self._has_labeled_value(
+                text,
+                labels,
+                value_predicate=self._looks_like_sensitive_address_value,
+            ):
+                return True
+        return False
+
+    def _has_labeled_value(
+        self,
+        text: str,
+        labels: tuple[str, ...],
+        *,
+        value_predicate: Any | None = None,
+    ) -> bool:
+        label_pattern = "|".join(re.escape(label) for label in labels)
+        pattern = re.compile(
+            rf"(?P<label>{label_pattern})\s*[:：]\s*(?P<value>.*?){self.CONTACT_VALUE_TERMINATOR}",
+            re.I,
+        )
+        for match in pattern.finditer(text):
+            value = match.group("value").strip()
+            if not value:
+                continue
+            if self._is_mask_token_value(value):
+                continue
+            if value_predicate is not None and not value_predicate(value):
+                continue
+            return True
+        return False
+
+    def _looks_like_sensitive_address_value(self, value: str) -> bool:
+        if self.URL_RE.search(value):
+            return True
+        if self.ADDRESS_PLACEHOLDER_RE.search(value):
+            return True
+        stripped = value.strip("`'\"[](){}")
+        if not stripped or self._is_mask_token_value(stripped):
+            return False
+        return len(stripped) >= 4
+
+    def _is_mask_token_value(self, value: str) -> bool:
+        normalized = value.strip().strip("`'\"(){}")
+        if not normalized:
+            return False
+        if normalized == self.settings.pii_mask_token:
+            return True
+        normalized_compact = normalized.replace(" ", "").lower()
+        mask_compact = self.settings.pii_mask_token.replace(" ", "").lower()
+        if normalized_compact == mask_compact:
+            return True
+        normalized_inner = normalized.strip("[]").lower()
+        mask_inner = self.settings.pii_mask_token.strip("[]").lower()
+        return bool(normalized_inner) and normalized_inner == mask_inner
+
+    def _fallback_pii_redaction(self, hits: list[str]) -> str:
+        labels = {
+            "email": "Email",
+            "phone": "Phone",
+            "phone_masked": "Phone",
+            "contact": "Contact",
+            "address": "Address",
+            "address_placeholder": "Address",
+            "url": "Link",
+        }
+        parts: list[str] = []
+        seen: set[str] = set()
+        for hit in hits:
+            label = labels.get(hit)
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            parts.append(f"{label}: {self.settings.pii_mask_token}")
+        if not parts:
+            parts.append(f"Contact: {self.settings.pii_mask_token}")
+        return "The response contained personal information and was redacted for privacy. " + "; ".join(parts)
 
     def _dedupe(self, items: list[str]) -> list[str]:
         ordered: list[str] = []
